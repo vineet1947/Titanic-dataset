@@ -1,0 +1,176 @@
+#importing all the required libraries  
+
+import numpy as np  
+import matplotlib.pyplot as plt
+import sklearn 
+import pandas as pd 
+
+#import datasets manually from ur local drive 
+from google.colab import files
+files.upload()
+#u can find the titanic dataset  , train and test from kaggle 
+
+# have a look at the listed files  
+!ls
+
+#read the data using pandas as pd 
+train_data = pd.read_csv("train.csv")
+test_data = pd.read_csv("test.csv")
+
+#have a good look at the data 
+
+train_data.head() # this command lists starting data sets
+
+train_data.info() # get all the info about the data 
+train_data.describe() #more info 
+
+#Now let's build our preprocessing pipelines
+
+from sklearn.base import BaseEstimator , TransformerMixin
+
+#create a DataFrame selector 
+class DataFrameSelector(BaseEstimator , TransformerMixin) :
+  def __init__(self , attribute_names) :
+    self.attribute_names = attribute_names 
+  def fit(self , X , y = None ) :
+    return self 
+  def transform(self , X)  :
+    return X[self.attribute_names]
+  
+#some datasets are missing some values so using an Imputer  for them 
+#and creating  a pipeline structure to apply  multiple funcitons on them 
+
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+
+#first pipeline for numerical data like  age  , fare , etc
+
+num_pipeline = Pipeline([
+        ("select_numeric", DataFrameSelector(["Age", "SibSp", "Parch", "Fare"])),
+        ("imputer", SimpleImputer(strategy="median")),
+    ])
+
+#fit and transform the  training dataset 
+
+num_pipeline.fit_transform(train_data)
+
+#Need imputer class for modular data filling 
+#imputer simply fills the missing values using dataset examples approximations
+
+class MostFrequentImputer(BaseEstimator , TransformerMixin):
+  def fit(self ,X ,y = None):
+    self.most_frequent_ = pd.Series([X[c].value_counts().index[0] for c in X] ,
+                                    index = X.columns)
+    return self 
+
+  def transform(self ,X , y = None):
+    return X.fillna(self.most_frequent_)
+    
+
+#import  more files  , basically encoder to convert data into encoded form 
+#learn more  on One Hot encoding and OrdinalEncoder 
+
+from sklearn.preprocessing import  OneHotEncoder , OrdinalEncoder 
+#second pipeline for categorical data like gender
+
+cat_pipeline  = Pipeline([
+                          ("select_cat" ,DataFrameSelector(["Pclass" , "Sex" , "Embarked"]))  ,
+                          ("imputer" , MostFrequentImputer()) ,
+                          ("cat_encoder" ,OneHotEncoder(sparse = False))
+                          
+                        
+])
+
+
+#again same process as with num_pipeline 
+#doing fit_transform 
+
+cat_pipeline.fit_transform(train_data)
+
+#now  , using FeatureUnion to combine both the pipelines 
+
+from sklearn.pipeline import FeatureUnion
+preprocess_pipeline = FeatureUnion(transformer_list= [
+                                                      ("num_pipeline" ,num_pipeline) ,
+                                                      ("cat_pipeline" , cat_pipeline), 
+])
+
+#using fit_trandform again 
+#fit_transform ,  "fit" computes the mean and std to be used for later scaling. (just a computation),
+#nothing is given to you. 
+#"transform" uses a previously computed mean and std to autoscale the data (subtract mean from all values and then divide it by std).
+#"fit_transform" does both at the same time. 
+
+#training class defined here
+
+X_train = preprocess_pipeline.fit_transform(train_data)
+X_train
+
+#target class defined here 
+y_train = train_data["Survived"]
+
+#We are now ready to train a classifier. Let's start with an SVC:
+#feel free to use any model u like 
+
+#Support verctor machines is what i am talking about here 
+#Support Vector Class  : 
+
+from sklearn.svm import SVC
+
+#initialise the class here : 
+
+svm_clf = SVC(gamma = "auto")
+svm_clf.fit(X_train , y_train)
+
+#output will look something like this  :
+"""SVC(C=1.0, break_ties=False, cache_size=200, class_weight=None, coef0=0.0,
+   decision_function_shape='ovr', degree=3, gamma='auto', kernel='rbf',
+    max_iter=-1, probability=False, random_state=None, shrinking=True,
+    tol=0.001, verbose=False) """
+   
+ #definig a test set  
+ #and predicting a dataset 
+ 
+ 
+X_test = preprocess_pipeline.transform(test_data)
+y_pred = svm_clf.predict(X_test)
+    
+ #using a cross validation score to compare the predicted and observed dataset  
+ 
+from sklearn.model_selection import   cross_val_score
+
+svm_score = cross_val_score(svm_clf , X_train , y_train , cv  =10 )
+svm_score.mean()
+
+#we get a o/p of   : 0.7329588014981274
+#which means our trained model is 73% accurate 
+
+#Let's try a RandomForestClassifier:
+
+from sklearn.ensemble import  RandomForestClassifier 
+
+
+forest_clf  = RandomForestClassifier(n_estimators= 100 , random_state = 42)
+forest_clf.fit(X_train , y_train)
+
+
+#we get an output like this  :
+
+"""RandomForestClassifier(bootstrap=True, ccp_alpha=0.0, class_weight=None,
+                       criterion='gini', max_depth=None, max_features='auto',
+                       max_leaf_nodes=None, max_samples=None,
+                       min_impurity_decrease=0.0, min_impurity_split=None,
+                       min_samples_leaf=1, min_samples_split=2,
+                       min_weight_fraction_leaf=0.0, n_estimators=100,
+                       n_jobs=None, oob_score=False, random_state=42, verbose=0,
+                       warm_start=False)"""
+                       
+forest_score = cross_val_score(forest_clf , X_train , y_train , cv = 10 )
+forest_score.mean()
+
+
+#we get a o/p of   : 0.8126466916354558
+#which means our trained model is 81% accurate 
+#hence better than svm 
+
+#that concludes this byfar 
